@@ -1,0 +1,102 @@
+{{ if not .Values.global.support.ipv6.enabled -}}
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ template "eric-oss-pf-drools.name" . }}-rbac-configuration-configmap
+  labels:
+    app: {{ template "eric-oss-pf-drools.name" . }}-rbac-configuration-configmap
+  {{- include "eric-oss-pf-drools.kubernetes-io-info" .| nindent 4 }}
+  annotations:
+  {{- include "eric-oss-pf-drools.eric-product-info" .| nindent 4 }}
+data:
+  rbac-configuration.json: |
+      {
+        "roles": [{
+                        "name": "PF_DROOLS_Admin",
+                        "attributes": {
+                                "type": ["internal"]
+                        }
+                }, {
+                        "name": "PF_DROOLS_User",
+                "attributes": {
+                                "type": ["internal"]
+                        }
+                }
+        ],
+        "authorization": {
+                "resources": [{
+                        "name": "DROOLS Endpoints",
+                        "type": "urn:eo:pf:resources:drools",
+                        "ownerManagedAccess": false,
+                        "attributes": {},
+                        "uris": [
+                            "/policy/drools/",
+                            "/policy/drools/**"
+                        ],
+                        "scopes": [{
+                                "name": "GET"
+                            }, {
+                                "name": "POST"
+                            }, {
+                                "name": "DELETE"
+                            }, {
+                                "name": "PATCH"
+                            }, {
+                                "name": "PUT"
+                            }
+                        ]
+                    }
+                ],
+                "policies": [{
+                        "name": "Is PF DROOLS Admin",
+                        "type": "role",
+                        "logic": "POSITIVE",
+                        "decisionStrategy": "UNANIMOUS",
+                        "config": {
+                                "roles": "[{\"id\":\"PF_DROOLS_Admin\",\"required\":false}]"
+                        }
+                     }, {
+                        "name": "Is PF DROOLS User",
+                        "type": "role",
+                        "logic": "POSITIVE",
+                        "decisionStrategy": "UNANIMOUS",
+                        "config": {
+                                "roles": "[{\"id\":\"PF_DROOLS_User\",\"required\":false}]"
+                        }
+                     }, {
+                        "name": "Admin EO DROOLS",
+                        "type": "scope",
+                        "logic": "POSITIVE",
+                        "decisionStrategy": "AFFIRMATIVE",
+                        "config": {
+                                "resources": "[\"DROOLS Endpoints\"]",
+                                "scopes": "[\"PUT\",\"POST\",\"DELETE\",\"PATCH\"]",
+                                "applyPolicies": "[\"Is PF DROOLS Admin\"]"
+                        }
+                     },{
+                        "name": "View DROOLS Endpoints",
+                        "type": "scope",
+                        "logic": "POSITIVE",
+                        "decisionStrategy": "AFFIRMATIVE",
+                        "config": {
+                                "resources": "[\"DROOLS Endpoints\"]",
+                                "scopes": "[\"GET\"]",
+                                "applyPolicies": "[\"Is PF DROOLS Admin\",\"Is PF DROOLS User\"]"
+                        }
+                    }
+                ],
+                "scopes": [{
+                                "name": "GET"
+                            }, {
+                                "name": "POST"
+                            }, {
+                                "name": "DELETE"
+                            }, {
+                                "name": "PATCH"
+                            }, {
+                                "name": "PUT"
+                            }
+                ]
+        }
+      }
+{{- end }}

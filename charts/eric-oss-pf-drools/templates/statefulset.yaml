@@ -1,0 +1,133 @@
+{{ if not .Values.global.support.ipv6.enabled -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ template "eric-oss-pf-drools.name" .   }}
+  labels:
+    app: {{ template "eric-oss-pf-drools.name" .  }}
+  {{- include "eric-oss-pf-drools.kubernetes-io-info" .| nindent 4 }}
+  annotations:
+  {{- include "eric-oss-pf-drools.eric-product-info" .| nindent 4 }}
+spec:
+  updateStrategy:
+    type: {{ .Values.updateStrategy.type | quote }}
+  serviceName: {{ .Chart.Name }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name  | quote }}
+  template:
+    metadata:
+      annotations:
+      {{- include "eric-oss-pf-drools.eric-product-info" .| nindent 8 }}
+      labels:
+        app: {{ template "eric-oss-pf-drools.name" . }}
+      {{- include "eric-oss-pf-drools.kubernetes-io-info" .| nindent 8 }}
+    spec:
+      serviceAccountName: {{ template "eric-oss-pf-drools.name" . }}-sa
+      {{- if  .Values.imageCredentials.pullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.imageCredentials.pullSecret | quote }}
+      {{- else if .Values.global.pullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.global.pullSecret | quote }}
+      {{- end }}
+      
+      {{- if (index .Values.podPriority "eric-oss-pf-drools" "priorityClassName") }}
+      priorityClassName: {{ index .Values.podPriority "eric-oss-pf-drools" "priorityClassName" | quote }}
+      {{- end }}
+      
+      containers:
+        - name: {{ .Chart.Name | quote }}
+          image: "{{ template "eric-oss-pf-drools.mainImagePath" . }}"
+          imagePullPolicy: {{ include "eric-oss-pf-drools.imagePullPolicy" $ | quote }}
+          ports:
+          - containerPort: {{ .Values.service.externalPort }}
+          - containerPort: {{ .Values.service.externalPort2 }}
+          resources:
+            requests:
+              memory: {{ .Values.resources.drools.requests.memory | quote}}
+              cpu: {{ .Values.resources.drools.requests.cpu}}
+              
+              {{- if index $.Values "resources" "drools" "requests" "ephemeral-storage" }}
+              ephemeral-storage: {{ index $.Values "resources" "drools" "requests" "ephemeral-storage" | quote }}
+              {{- end }} 
+            limits:
+              memory: {{ .Values.resources.drools.limits.memory | quote}}
+              cpu: {{ .Values.resources.drools.limits.cpu }}
+              
+              {{- if index $.Values "resources" "drools" "limits" "ephemeral-storage" }}
+              ephemeral-storage: {{ index $.Values "resources" "drools" "limits" "ephemeral-storage" | quote }}
+              {{- end }}
+              
+          {{- if eq .Values.liveness.enabled true }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.service.externalPort }}
+            initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.liveness.periodSeconds }}
+          {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.service.externalPort }}
+            initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readiness.periodSeconds }}
+          env:
+          - name: REPLICAS
+            value: "{{ .Values.replicaCount }}"
+          volumeMounts:
+          - mountPath: /etc/localtime
+            name: localtime
+            readOnly: true
+          {{- range $path, $bytes := .Files.Glob "resources/secrets/*" }}
+          - mountPath: /tmp/policy-install/config/{{ base $path }}
+            name: drools-secret
+            subPath: {{ base $path }}
+          {{- end }}
+          {{- range $path, $bytes := .Files.Glob "resources/configmaps/*" }}
+          - mountPath: /tmp/policy-install/config/{{ base $path }}
+            name: drools-config
+            subPath: {{ base $path }}
+          {{- end }}
+          - mountPath: /var/log/onap
+            name: policy-logs
+          securityContext:
+            allowPrivilegeEscalation: true
+            runAsNonRoot: true
+            runAsUser: 1000
+      {{- if .Values.nodeSelector}}
+      nodeSelector:
+        {{ toYaml .Values.nodeSelector }}
+      {{- else if .Values.global.nodeSelector}}
+      nodeSelector:
+        {{ toYaml .Values.global.nodeSelector }}
+      {{- end}}
+        {{- if .Values.affinity }}
+        affinity:
+{{ toYaml .Values.affinity | indent 10 }}
+        {{- end }}
+      volumes:
+        - name: localtime
+          hostPath:
+            path: /etc/localtime
+        - name: policy-logs
+          emptyDir: {}
+        - name: drools-config
+          configMap:
+            name: {{ include "eric-oss-pf-drools.name" . }}-configmap
+            items:
+            {{- range $path, $bytes := .Files.Glob "resources/configmaps/*" }}
+            - key: {{ base $path }}
+              path: {{ base $path }}
+              mode: 0755
+            {{- end }}
+        - name: drools-secret
+          secret:
+            secretName: {{ include "eric-oss-pf-drools.name" . }}-secret
+            items:
+            {{- range $path, $bytes := .Files.Glob "resources/secrets/*" }}
+            - key: {{ base $path }}
+              path: {{ base $path }}
+              mode: 0644
+            {{- end }}
+{{- end }}

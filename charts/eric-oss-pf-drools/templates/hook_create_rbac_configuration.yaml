@@ -1,0 +1,103 @@
+{{ if not .Values.global.support.ipv6.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ template "eric-oss-pf-drools.name" . }}-create-rbac-configuration-hook
+  labels:
+    app: {{ template "eric-oss-pf-drools.name" . }}-create-rbac-configuration-hook
+  {{- include "eric-oss-pf-drools.kubernetes-io-info" .| nindent 4 }}
+  annotations:
+  {{- include "eric-oss-pf-drools.eric-product-info" .| nindent 4 }}
+    "helm.sh/hook": post-install, post-upgrade, post-rollback
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  backoffLimit: 8
+  template:
+    metadata:
+      annotations:
+      {{- include "eric-oss-pf-drools.eric-product-info" .| nindent 8 }}
+      labels:
+        app: {{ template "eric-oss-pf-drools.name" . }}
+      {{- include "eric-oss-pf-drools.kubernetes-io-info" .| nindent 8 }}
+    spec:
+      serviceAccountName: {{ template "eric-oss-pf-drools.name" . }}-sa
+      {{- if  .Values.imageCredentials.pullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.imageCredentials.pullSecret | quote }}
+      {{- else if .Values.global.pullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.global.pullSecret | quote }}
+      {{- end }}
+      
+      {{- if (index .Values.podPriority "eric-oss-pf-drools" "priorityClassName") }}
+      priorityClassName: {{ index .Values.podPriority "eric-oss-pf-drools" "priorityClassName" | quote }}
+      {{- end }}
+      
+      restartPolicy: Never
+      containers:
+        - name: keycloak-client
+          image: {{ template "eric-oss-pf-drools.keycloakImagePath" . }}
+          resources:
+            requests:
+              memory: {{ .Values.resources.keycloak.requests.memory | quote}}
+              cpu: {{ .Values.resources.keycloak.requests.cpu}}
+              {{- if index $.Values "resources" "keycloak" "requests" "ephemeral-storage" }}
+              ephemeral-storage: {{ index $.Values "resources" "keycloak" "requests" "ephemeral-storage" | quote }}
+              {{- end }}
+              
+            limits:
+              memory: {{ .Values.resources.keycloak.limits.memory | quote}}
+              cpu: {{ .Values.resources.keycloak.limits.cpu }}
+              {{- if index $.Values "resources" "keycloak" "limits" "ephemeral-storage" }}
+              ephemeral-storage: {{ index $.Values "resources" "keycloak" "limits" "ephemeral-storage" | quote }}
+              {{- end }}
+          env:
+          env:
+          - name: IAM_ADMIN_USER
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.global.iam.adminSecret | quote }}
+                key: {{ .Values.global.iam.userKey | quote }}
+          - name: IAM_ADMIN_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.global.iam.adminSecret | quote }}
+                key: {{ .Values.global.iam.passwordKey | quote }}
+          args:
+          - "create"
+          - "authz"
+          - "--keycloak_hostname={{ .Values.global.hosts.iam }}"
+          - "--keycloak_user=$(IAM_ADMIN_USER)"
+          - "--keycloak_password=$(IAM_ADMIN_PASSWORD)"
+          - "--client_name={{ .Values.global.iam.clientId }}"
+          - "--provider={{ .Chart.Name }}"
+          - "--config=/config/rbac-configuration.json"
+          volumeMounts:
+          - name: create-rbac-configuration-volume
+            mountPath: /config
+          - name: create-cacert-volume
+            mountPath: /mnt/certs
+          securityContext:
+            allowPrivilegeEscalation: true
+            runAsNonRoot: false
+            runAsUser: 0
+      {{- if .Values.nodeSelector}}
+      nodeSelector:
+        {{ toYaml .Values.nodeSelector }}
+      {{- else if .Values.global.nodeSelector}}
+      nodeSelector:
+        {{ toYaml .Values.global.nodeSelector }}
+      {{- end}}
+      volumes:
+      - name: create-rbac-configuration-volume
+        configMap:
+          name: {{template "eric-oss-pf-drools.name" . }}-rbac-configuration-configmap
+          defaultMode: 0777
+      - name: create-cacert-volume
+        secret:
+          secretName: {{ .Values.global.iam.cacert.secretName }}
+          items:
+            - key: {{ .Values.global.iam.cacert.key }}
+              path: {{ .Values.global.iam.cacert.filePath }}
+{{- end }}

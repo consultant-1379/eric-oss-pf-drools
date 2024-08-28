@@ -1,0 +1,13 @@
+{{ if not .Values.global.support.ipv6.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "eric-oss-pf-drools.name" . }}-configmap
+  labels:
+    app: {{ template "eric-oss-pf-drools.name" . }}-configmap
+  {{- include "eric-oss-pf-drools.kubernetes-io-info" .| nindent 4 }}
+  annotations:
+  {{- include "eric-oss-pf-drools.eric-product-info" .| nindent 4 }}
+data:
+{{ tpl (.Files.Glob "resources/configmaps/*").AsConfig . | indent 2 }}
+{{- end }}
